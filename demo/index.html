@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<!-- Created by Erion Nezha — © 2026 All rights reserved -->
+<html lang="sq">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Telegram Auto-Reply Bot — Demo</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif; background:#0e1621; color:#fff;
+         display:flex; justify-content:center; align-items:center; min-height:100vh; padding:16px; }
+  .phone { width:100%; max-width:420px; height:640px; max-height:92vh; background:#0e1621;
+           border-radius:24px; overflow:hidden; display:flex; flex-direction:column;
+           box-shadow:0 20px 60px rgba(0,0,0,.6); border:1px solid #1c2b3f; }
+  .chat-header { background:#17212b; padding:12px 16px; display:flex; align-items:center; gap:12px;
+                 border-bottom:1px solid #0e1621; }
+  .avatar { width:42px; height:42px; border-radius:50%; background:linear-gradient(135deg,#37aee2,#1e96c8);
+            display:flex; align-items:center; justify-content:center; font-size:20px; flex-shrink:0; }
+  .chat-info { flex:1; }
+  .chat-name { font-weight:600; font-size:15px; }
+  .chat-status { font-size:12px; color:#37aee2; }
+  .chat-status.off { color:#8b9bab; }
+  .toggle { position:relative; width:44px; height:24px; background:#2b5278; border-radius:12px; cursor:pointer; transition:.2s; flex-shrink:0; }
+  .toggle.off { background:#3a4653; }
+  .toggle::after { content:''; position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%;
+                   background:#fff; transition:.2s; }
+  .toggle:not(.off)::after { left:22px; }
+  .sim-badge { background:#1c2b3f; color:#8b9bab; font-size:11px; text-align:center; padding:6px 10px; }
+  .sim-badge b { color:#f5c542; }
+  .messages { flex:1; overflow-y:auto; padding:16px 12px; display:flex; flex-direction:column; gap:8px;
+              background:#0e1621;
+              background-image:radial-gradient(circle at 20% 30%, rgba(55,174,226,.05) 0, transparent 40%); }
+  .msg { max-width:78%; padding:8px 12px; border-radius:12px; font-size:14px; line-height:1.45;
+         animation:pop .25s ease; word-wrap:break-word; }
+  @keyframes pop { from { transform:scale(.92); opacity:0; } to { transform:scale(1); opacity:1; } }
+  .msg.me { align-self:flex-end; background:#2b5278; border-bottom-right-radius:4px; }
+  .msg.bot { align-self:flex-start; background:#182533; border-bottom-left-radius:4px; }
+  .msg .time { display:block; font-size:10px; color:#8b9bab; text-align:right; margin-top:4px; }
+  .typing { align-self:flex-start; background:#182533; padding:12px 16px; border-radius:12px; display:flex; gap:5px; }
+  .typing span { width:7px; height:7px; border-radius:50%; background:#8b9bab; animation:blink 1.2s infinite; }
+  .typing span:nth-child(2){ animation-delay:.2s; } .typing span:nth-child(3){ animation-delay:.4s; }
+  @keyframes blink { 0%,60%,100%{opacity:.3} 30%{opacity:1} }
+  .input-bar { background:#17212b; padding:10px 12px; display:flex; gap:8px; align-items:center; }
+  .input-bar input { flex:1; background:#0e1621; border:none; outline:none; color:#fff; font-size:14px;
+                     padding:10px 14px; border-radius:20px; }
+  .input-bar button { width:40px; height:40px; border-radius:50%; border:none; cursor:pointer;
+                      background:#2b5278; color:#fff; font-size:18px; flex-shrink:0; }
+  .input-bar button:hover { background:#37aee2; }
+  .hint { text-align:center; color:#5b6b7c; font-size:12px; padding:8px; }
+  footer { text-align:center; color:#5b6b7c; font-size:12px; padding:10px; background:#17212b; }
+  footer b { color:#8b9bab; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="chat-header">
+    <div class="avatar">🤖</div>
+    <div class="chat-info">
+      <div class="chat-name">Auto-Reply Bot</div>
+      <div class="chat-status" id="status">online — përgjigja automatike aktive</div>
+    </div>
+    <div class="toggle" id="toggle" title="Ndez/Fik përgjigjen automatike"></div>
+  </div>
+  <div class="sim-badge"><b>SIMULIM</b> — versioni real përdor Telethon me API ID / API Hash</div>
+  <div class="messages" id="messages"></div>
+  <div class="hint">Shkruaj një mesazh — boti përgjigjet automatikisht 👇</div>
+  <div class="input-bar">
+    <input type="text" id="input" placeholder="Shkruaj mesazh..." autocomplete="off">
+    <button id="send" aria-label="Dërgo">➤</button>
+  </div>
+  <footer>Krijuar nga <b>Erion Nezha</b></footer>
+</div>
+<script>
+(function () {
+  'use strict';
+  // Përgjigja automatike — identike me atë të burimit origjinal (bot.py)
+  var AUTO_REPLY = "اهلا حبي\nانا ماموجود هسه مفعل تلقائي\nمن اجي ارد عليك 👾";
+  var autoOn = true;
+  var box = document.getElementById('messages');
+  var input = document.getElementById('input');
+  var toggle = document.getElementById('toggle');
+  var statusEl = document.getElementById('status');
+
+  function now() {
+    var d = new Date();
+    return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+  }
+  function esc(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function addMsg(text, who) {
+    var div = document.createElement('div');
+    div.className = 'msg ' + who;
+    div.innerHTML = esc(text).replace(/\n/g, '<br>') + '<span class="time">' + now() + '</span>';
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+  }
+  function showTyping() {
+    var t = document.createElement('div');
+    t.className = 'typing'; t.id = 'typing';
+    t.innerHTML = '<span></span><span></span><span></span>';
+    box.appendChild(t);
+    box.scrollTop = box.scrollHeight;
+  }
+  function hideTyping() {
+    var t = document.getElementById('typing');
+    if (t) t.remove();
+  }
+
+  toggle.addEventListener('click', function () {
+    autoOn = !autoOn;
+    toggle.classList.toggle('off', !autoOn);
+    statusEl.textContent = autoOn ? 'online — përgjigja automatike aktive' : 'online — përgjigja automatike e fikur';
+    statusEl.classList.toggle('off', !autoOn);
+  });
+
+  function send() {
+    var text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    addMsg(text, 'me');
+    if (!autoOn) return;
+    showTyping();
+    setTimeout(function () {
+      hideTyping();
+      addMsg(AUTO_REPLY, 'bot');
+    }, 1100);
+  }
+
+  document.getElementById('send').addEventListener('click', send);
+  input.addEventListener('keydown', function (e) { if (e.key === 'Enter') send(); });
+
+  // Mesazh hyrës demonstrues
+  setTimeout(function () { addMsg('Përshëndetje! Ky është simulimi i Auto-Reply Bot-it. 👋', 'bot'); }, 400);
+})();
+</script>
+</body>
+</html>
